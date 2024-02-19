@@ -1,0 +1,116 @@
+---
+title: "Data Cleaning"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+```{r}
+#loading in the packages
+
+library(rio)
+library(fixest)
+library(dplyr)
+library(vtable)
+library(tidyverse)
+```
+
+```{r}
+#reading in the google trends data
+
+# Get a vector of filenames using list.files()
+# makes a list of all the file names "trends_up_to" and saves it as filenames
+filenames <- list.files(pattern = "trends_up_to_", full.names = TRUE)
+
+# Read in the files using import_list() and bind them together into a single dataset
+# imports and combines all the files
+data <- import_list(filenames, rbind = TRUE, fill=TRUE)
+```
+
+```{r}
+#aggregating in the google trends data
+
+# Load the lubridate package
+library(lubridate)
+
+# Use str_sub to get the first ten characters out of the monthorweek variable
+# takes first 10 characters from the monthorweek columm
+data <- data %>%
+  mutate(date = str_sub(monthorweek, 1, 10))
+
+# Use ymd() function from lubridate to convert the string into a date variable
+# converts it into actual date object
+data <- data %>%
+  mutate(date = floor_date(ymd(date), "month"))
+```
+
+```{r}
+# aggregating in the google trends data part 2
+# changes it to a one unit change in sd so that we can compare apples to apples
+# There are a couple missing index observations in the data (usually from rows after the data ends). However, a mean() or sd() function will return a NA if any of the observations are missing. Don't forget to use na.rm = TRUE in these functions
+
+data <- data %>%
+  group_by(schname, keyword) %>%
+  mutate(standardized_index = (index - mean(index, na.rm = TRUE)) / sd(index, na.rm = TRUE))
+
+#aggregating to the school-month level
+  
+data <- data %>%
+  group_by(schname, date) %>%
+  summarize(standardized_index = mean(standardized_index))
+
+data <- na.omit(data)
+```
+
+```{r}
+#reading in the scorecard data
+
+scorecard_data <- import("Most+Recent+Cohorts+(Scorecard+Elements).csv")
+
+# Read in the id_name_link file
+id_name_link <- import("id_name_link.csv")
+
+
+#filters for only universities that are Predominantly bachelor's-degree granting
+scorecard_data <- filter(scorecard_data, PREDDEG == 3)
+
+```
+
+```{r}
+#merge in the scorecard data
+
+# Count how many times each school name appears in id_name_link
+school_name_counts <- id_name_link %>%
+  group_by(schname) %>%
+  mutate(n = n()) %>%
+  ungroup()
+
+# Filter out school names that show up more than once
+filtered_id_name_link <- school_name_counts %>%
+  filter(n == 1)
+
+```
+
+```{r}
+#joining data together
+
+# Join Google trends data to id_name_link using schname
+joined_data <- inner_join(filtered_id_name_link, data, by = c("schname" = "schname"))
+
+# Then join Scorecard data using unitid and/or opeid columns
+#final_data <- inner_join(joined_data, scorecard_data, by = c("UNITID", "OPEID"))
+
+final_data <- inner_join(joined_data, scorecard_data, by = c("unitid" = "UNITID", "opeid" = "OPEID"))
+
+```
+
+```{r}
+#exporting data
+
+library(writexl)
+
+write_xlsx(final_data, "final_data.xlsx")
+```

@@ -1,0 +1,112 @@
+---
+title: "WriteUp"
+format: html
+editor: visual
+---
+
+```{r}
+#loading in the packages
+
+library(rio)
+library(fixest)
+library(dplyr)
+library(vtable)
+library(tidyverse)
+library(lubridate)
+library(stringr)
+library(ggplot2)
+```
+
+```{r}
+#finding wokring directory
+getwd()
+
+#setting working directory
+setwd("/Users/oliverhall/Library/CloudStorage/OneDrive-SeattleUniversity/Documents/School/3 Junior/WQ/ECON/Data Exploration Project")
+
+#importing data
+Data1 <- import('final_data.xlsx')
+```
+
+```{r}
+#renaming column to an easier convention
+Data1 <- rename(Data1, earnings = "md_earn_wne_p10-REPORTED-EARNINGS")
+
+#column contains either PrivacySuppressed or NULL need to be removed
+Data1 <- Data1 %>%
+  filter(!str_detect(earnings, "PrivacySuppressed|NULL"))
+```
+
+```{r}
+#converting earnings to an integer
+Data2 <- as.integer(Data1$earnings)
+
+Data2 <- data.frame(Data2)
+
+#determining what constitutes high and low earning colleges
+mean(Data2$Data2, na.rm = TRUE)
+sd(Data2$Data2, na.rm = TRUE)
+```
+
+```{r}
+#defining what a high, low, and medium earning college is 
+
+Data1 <- Data1 %>%
+  mutate(earning_level  = case_when(
+    earnings <= 30646.05 ~ 'low',
+    earnings >= 42466.35 ~ 'high',
+    TRUE ~ 'Medium'
+  ))
+```
+
+```{r}
+#generating groups based off when the scorecard tool was introduced
+Data1 <- Data1 %>%
+  mutate(scorecard_effect = case_when(
+    date <= '2015-09-01' ~ 'before',
+    earnings > '2015-09-01' ~ 'after'
+  ))
+```
+
+```{r}
+#removing the 'Medium' field from earnings_level in order to just compare high to low earning colleges as well as NA's
+low_or_high <- filter(Data1, earning_level != 'Medium')
+#removing NA's
+low_or_high <- na.omit(low_or_high)
+```
+
+```{r}
+#
+low_or_high2 <- low_or_high %>% group_by(scorecard_effect, earning_level, date) %>%
+  summarize(mean_index = mean(standardized_index))
+```
+
+```{r}
+#graph
+ggplot(data = low_or_high2, aes(x=date, y = mean_index, color= earning_level)) + geom_line() + labs(x = "Year", y = "Average Index", color = "Earning Level") + theme()
+```
+
+```{r}
+#creating binary variables
+regData <- low_or_high2 %>% 
+  mutate(high_earners = ifelse(earning_level == "high", 1, 0),
+         low_earners = ifelse(earning_level == "low", 1, 0))
+
+regData <- regData %>% 
+  mutate(screlease = ifelse(date < '2015-09-01', 0, 1))
+```
+
+```{r}
+reggg <- feols(mean_index ~ high_earners * screlease, data = regData)
+etable(reggg)
+```
+
+**Write Up:**
+
+I decided to aggregate my data by month so that I had a month-to-month scale. This was important to do because there was a huge amount of data and I personally preferred to have a data set with less noise and be a bit cleaner even if that meant losing some power.
+
+In order to create my groups for high and low-earning colleges I calculated the mean (42465.76) and the standard deviation (11818.2) for earnings. I defined my high-earnings college as the mean plus one standard deviation and my low-earnings college as the mean minus one standard deviation.
+
+I decided that I wanted to graph my data to see if I was heading in the right direction. I grouped by earning level and date to get averages for the index scores based on the month and earning level (high and low). It was interesting to see that the index scores go up every year around the June period for both high and low-earning colleges. This is likely because this is around when people are making college admissions.
+
+The introduction of the College Scorecard increased search activity on Google Trends for colleges with high-earning graduates by -0.0141 units relative to what it did for colleges with low-earning graduates, with a standard error of 0.2079. This result comes from the high_earnings x screlease coefficient in my regression.
